@@ -9,59 +9,87 @@ namespace Muryotaisu
         private Animator animator;
 
         public float speed = 2; // Walking speed
-        public float jumpSpeed = 2; // Jump speed
-        public float gravity = 1; //gravity
+        public float runSpeed = 5; // Running speed
+        public KeyCode runKey = KeyCode.LeftShift; // Tecla para correr
+        public bool hasRunAnimation = true; // Desactívalo si no tienes el parámetro "runFlag" en el Animator
 
-        public float rotas = 5; // Speed of rotation
+        public float jumpSpeed = 2; // Jump speed
+        public float gravity = 1; // gravity
+
+        public float rotationSpeed = 720f; // Grados por segundo con los que el personaje gira hacia donde camina
 
         public float startKocchi = 2; // Distance to camera for Kocchiflag firing <●><●>
 
-        float second; // Time Measurement
+        public bool isFirstPerson; // Lo controla FirstPersonToggle
 
-        int key = 0;
-        string state;
-        string prevState;
+        float second; // Time Measurement
 
         private CharacterController controller;
         private Vector3 moveDirection = Vector3.zero;
+        private Transform cam;
 
         // Start is called before the first frame update
         void Start()
         {
             animator = GetComponent<Animator>();
             controller = GetComponent<CharacterController>();
+            cam = Camera.main.transform;
         }
 
         // Update is called once per frame
         void Update()
         {
+            // Por si la cámara se creó/cambió después del Start
+            if (cam == null && Camera.main != null) cam = Camera.main.transform;
 
             // Smile
-            if (Input.GetKey("q"))
-            {
-                animator.SetBool("smileFlag", true);
-            } else {
-                animator.SetBool("smileFlag", false);
-            }
+            animator.SetBool("smileFlag", Input.GetKey("q"));
 
             // Kocchiminna <●><●>
-            Transform mypos = this.transform;
-            Vector3 Apos = mypos.position; 
+            float dist = Vector3.Distance(transform.position, cam.position);
+            animator.SetBool("kocchiFlag", dist < startKocchi);
 
-            Transform campos = Camera.main.transform;
-            Vector3 Bpos = campos.position; 
+            // ---------- INPUT (relativo a la cámara) ----------
+            float h = Input.GetAxisRaw("Horizontal"); // A/D y flechas
+            float v = Input.GetAxisRaw("Vertical");   // W/S y flechas
+            Vector3 input = new Vector3(h, 0f, v);
+            bool hasInput = input.sqrMagnitude > 0.01f;
+            input.Normalize();
 
-            float dist = Vector3.Distance(Apos, Bpos);
+            // ---------- CORRER ----------
+            bool isRunning = hasInput && Input.GetKey(runKey);
+            float currentSpeed = isRunning ? runSpeed : speed;
 
-            if (dist < startKocchi)
+            // Direcciones de la cámara aplanadas en el plano horizontal
+            Vector3 camForward = cam.forward;
+            camForward.y = 0f;
+            camForward.Normalize();
+            Vector3 camRight = cam.right;
+            camRight.y = 0f;
+            camRight.Normalize();
+
+            Vector3 desiredDir = camForward * input.z + camRight * input.x;
+
+            // ---------- ROTACIÓN + MOVIMIENTO HORIZONTAL ----------
+            Vector3 horizontalMove = Vector3.zero;
+            if (hasInput && desiredDir.sqrMagnitude > 0.0001f)
             {
-                animator.SetBool("kocchiFlag", true);
-            } else {
-                animator.SetBool("kocchiFlag", false);
+                // En primera persona el cuerpo gira con el mouse, no hacia donde camina
+                if (!isFirstPerson)
+                {
+                    Quaternion targetRot = Quaternion.LookRotation(desiredDir, Vector3.up);
+                    transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRot, rotationSpeed * Time.deltaTime);
+                }
+
+                horizontalMove = desiredDir.normalized * currentSpeed;
             }
 
+            // ---------- SUELO / ANIMACIONES / SALTO ----------
             if (controller.isGrounded)
             {
+                // Evita que la gravedad se acumule mientras está en el piso
+                if (moveDirection.y < 0f) moveDirection.y = -1f;
+
                 // Switching idle motions
                 second += Time.deltaTime;
 
@@ -70,106 +98,41 @@ namespace Muryotaisu
                     animator.SetBool("jumpFlag", true);
                     animator.SetBool("walkFlag", false);
                     animator.SetBool("idleFlag", false);
-                } else if ((Input.GetKey("up")) || (Input.GetKey("right")) || (Input.GetKey("down")) || (Input.GetKey("left"))|| Input.GetKey("w") || Input.GetKey("d") || Input.GetKey("s") || Input.GetKey("a"))
+                    moveDirection.y = jumpSpeed;
+                }
+                else if (hasInput)
                 {
                     animator.SetBool("jumpFlag", false);
                     animator.SetBool("walkFlag", true);
                     animator.SetBool("idleFlag", false);
-                } else if (second >= 15)
+                    second = 0;
+                }
+                else if (second >= 15)
                 {
                     animator.SetBool("jumpFlag", false);
                     animator.SetBool("walkFlag", false);
                     animator.SetBool("idleFlag", false);
                     animator.SetTrigger("idleBFlag");
                     second = 0;
-                } else {
+                }
+                else
+                {
                     animator.SetBool("jumpFlag", false);
                     animator.SetBool("walkFlag", false);
                     animator.SetBool("idleFlag", true);
                 }
-
-                if (Input.GetKey("up") || Input.GetKey("w"))
-                {
-                    float angleDiff = Mathf.DeltaAngle(transform.localEulerAngles.y, 180);
-                    if (angleDiff == 0)
-                    {
-                        controller.Move (this.gameObject.transform.forward * speed * Time.deltaTime);
-                    } else if (angleDiff < -1f)
-                    {
-                        transform.Rotate(0, rotas * -1, 0);
-                    } else if (angleDiff > 1f)
-                    {
-                        transform.Rotate(0, rotas * 1, 0);
-                    } else {
-                        transform.rotation = Quaternion.Euler(0.0f, 180, 0.0f);
-                    }
-                }
-
-                if (Input.GetKey("right") || Input.GetKey("d"))
-                {
-                    float angleDiff = Mathf.DeltaAngle(transform.localEulerAngles.y, -90);
-                    if (angleDiff == 0)
-                    {
-                        controller.Move (this.gameObject.transform.forward * speed * Time.deltaTime);
-                    } else if (angleDiff < -1f) 
-                    {
-                        transform.Rotate( 0,rotas * -1, 0);
-                    } else if (angleDiff > 1f) 
-                    {
-                        transform.Rotate( 0,rotas * 1, 0);
-                    } else 
-                    {
-                        transform.rotation = Quaternion.Euler(0.0f, -90, 0.0f);
-                    }
-                }
-
-                if (Input.GetKey("down") || Input.GetKey("s")) 
-                {
-                    float angleDiff = Mathf.DeltaAngle(transform.localEulerAngles.y, 0);
-                    if (angleDiff == 0) 
-                    {
-                        controller.Move (this.gameObject.transform.forward * speed * Time.deltaTime);
-                    } else if (angleDiff < -1f) 
-                    {
-                        transform.Rotate( 0,rotas * -1, 0);
-                    } else if (angleDiff > 1f) 
-                    {
-                        transform.Rotate( 0,rotas * 1, 0);
-                    } else 
-                    {
-                        transform.rotation = Quaternion.identity;
-                    }
-                }
-
-                if (Input.GetKey("left") || Input.GetKey("a")) 
-                {
-                    float angleDiff = Mathf.DeltaAngle(transform.localEulerAngles.y, 90);
-                    //Debug.Log($"left: {angleDiff}");
-                    if (angleDiff == 0) 
-                    {
-                        controller.Move (this.gameObject.transform.forward * speed * Time.deltaTime);
-                    } else if (angleDiff < -1f) 
-                    {
-                        transform.Rotate( 0,rotas * -1, 0);
-                    } else if (angleDiff > 1f) 
-                    {
-                        transform.Rotate( 0,rotas * 1, 0);
-                    } else 
-                    {
-                        transform.rotation = Quaternion.Euler(0.0f, 90, 0.0f);
-                    }
-                }
-    
-                if (Input.GetKeyDown("space"))
-                {
-                    moveDirection.y = jumpSpeed;
-                }
-
             }
 
-            moveDirection.y -= gravity * Time.deltaTime;
-            controller.Move(moveDirection * Time.deltaTime);
+            // Animación de correr (solo en el suelo)
+            if (hasRunAnimation)
+                animator.SetBool("runFlag", isRunning && controller.isGrounded);
 
+            // ---------- GRAVEDAD + MOVER ----------
+            moveDirection.y -= gravity * Time.deltaTime;
+
+            Vector3 finalMove = horizontalMove;
+            finalMove.y = moveDirection.y;
+            controller.Move(finalMove * Time.deltaTime);
         }
     }
 
